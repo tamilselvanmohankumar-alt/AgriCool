@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgriCool - Advanced Smart Solar Mini Fridge</title>
+    
+    <!-- Dependencies -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Orbitron:wght@500;700&display=swap');
+        
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* Slate 900 */
+            color: #f8fafc;
+            user-select: none;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 0;
+        }
+
+        /* Glassmorphism UI */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Custom Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 18px;
+            width: 18px;
+            border-radius: 50%;
+            background: #38bdf8;
+            cursor: pointer;
+            margin-top: -7px;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+            transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+        }
+
+        .mic-wave {
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div id="canvas-container"></div>
+
+    <header class="absolute top-0 left-0 w-full z-10 p-5 pointer-events-none flex justify-between items-start">
+        <div class="flex items-center space-x-4 drop-shadow-lg">
+            <div class="bg-gradient-to-br from-emerald-400 to-emerald-600 text-white p-3 rounded-xl shadow-lg shadow-emerald-500/20 border border-emerald-400/30">
+                <i class="fa-solid fa-leaf text-2xl"></i>
+            </div>
+            <div>
+                <h1 class="text-3xl font-bold tracking-tight text-white drop-shadow-md">AgriCool <span class="text-emerald-400">Pro</span></h1>
+                <p class="text-sm text-gray-300 font-semibold tracking-wide flex items-center gap-2 mt-0.5">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    Live Hardware Demo
+                </p>
+            </div>
+        </div>
+        
+        <div class="pointer-events-auto flex gap-3">
+            <button id="btn-door" class="glass-panel px-4 py-2 rounded-lg text-sm font-semibold hover:bg-white/10 transition border border-white/20 flex items-center gap-2">
+                <i class="fa-solid fa-door-open"></i> Toggle Door
+            </button>
+        </div>
+    </header>
+
+    <aside class="absolute left-5 top-28 bottom-5 w-80 z-10 flex flex-col space-y-4 pointer-events-none">
+        
+        <!-- Controls Panel -->
+        <div class="glass-panel p-5 rounded-2xl pointer-events-auto">
+            <h2 class="text-xs uppercase tracking-widest text-emerald-400 font-bold mb-5 flex items-center gap-2">
+                <i class="fa-solid fa-sliders"></i> Environment Sim
+            </h2>
+            
+            <div class="space-y-6">
+                <!-- Sunlight Slider -->
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <label class="text-sm font-medium flex items-center gap-2 text-gray-200">
+                            <i class="fa-solid fa-sun text-yellow-400"></i> Sunlight Intensity
+                        </label>
+                        <span id="sun-val" class="text-sm font-mono text-yellow-400 font-bold">80%</span>
+                    </div>
+                    <input type="range" id="sun-slider" min="0" max="100" value="80" class="accent-yellow-400">
+                </div>
+
+                <!-- Voice Assist Button -->
+                <div class="pt-4 border-t border-white/10">
+                    <button id="btn-voice" class="w-full relative bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/50 rounded-xl p-3 transition-all duration-300 group overflow-hidden flex items-center justify-center gap-3">
+                        <div class="absolute inset-0 bg-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity mic-wave"></div>
+                        <div class="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white shadow-[0_0_15px_rgba(59,130,246,0.6)]">
+                            <i id="voice-icon" class="fa-solid fa-microphone"></i>
+                        </div>
+                        <span id="voice-text" class="font-semibold text-blue-100">Voice AI Analysis</span>
+                    </button>
+                    <div id="voice-toast" class="text-xs text-center text-blue-300 mt-2 opacity-0 transition-opacity">Connecting to AI...</div>
+                    <div id="ai-analysis-panel" class="hidden mt-3 p-3 bg-black/30 border border-blue-500/30 rounded-lg text-xs text-gray-300">
+                        <!-- AI Analysis content will be injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Telemetry Chart -->
+        <div class="glass-panel p-5 rounded-2xl pointer-events-auto flex-1 flex flex-col">
+            <h2 class="text-xs uppercase tracking-widest text-emerald-400 font-bold mb-2 flex items-center gap-2">
+                <i class="fa-solid fa-chart-line"></i> Thermal History
+            </h2>
+            <div class="flex-1 w-full relative min-h-[150px]">
+                <canvas id="tempChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="glass-panel p-4 rounded-xl pointer-events-auto text-xs text-gray-400 flex flex-col gap-1.5 border-l-4 border-l-emerald-500">
+            <div class="flex items-center gap-2"><i class="fa-solid fa-mouse text-emerald-400 w-4"></i> Drag to Orbit</div>
+            <div class="flex items-center gap-2"><i class="fa-solid fa-hand-pointer text-emerald-400 w-4"></i> Click fridge door to open/close</div>
+        </div>
+    </aside>
+
+    <aside class="absolute right-5 top-28 bottom-5 w-72 z-10 flex flex-col space-y-4 pointer-events-none">
+        <!-- Inventory Panel -->
+        <div class="glass-panel p-5 rounded-2xl pointer-events-auto shadow-2xl">
+            <h2 class="text-xs uppercase tracking-widest text-emerald-400 font-bold mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-box-open text-emerald-400"></i> Live Inventory
+            </h2>
+            <div id="inventory-list" class="space-y-3">
+                <!-- Populated via JS -->
+            </div>
+            <div class="mt-4 pt-3 border-t border-white/10 flex justify-between items-center text-sm font-bold text-white">
+                <span class="flex items-center gap-2"><i class="fa-solid fa-layer-group text-blue-400"></i> Total Items</span>
+                <span id="inv-total" class="bg-blue-500/20 text-blue-400 px-3 py-1 rounded-lg border border-blue-500/30">0</span>
+            </div>
+        </div>
+    </aside>
+
+    <script>
+        // System State
+        const state = {
+            sunlight: 80,
+            temp: 20.0,
+            targetTemp: 4.2,
+            humidity: 78.0,
+            battery: 85.0,
+            solarW: 0,
+            doorOpen: false,
+            inventory: {
+                tomatoes: 6,
+                peppers: 4,
+                eggplants: 3,
+                cucumbers: 5
+            },
+            inventoryDates: {
+                tomatoes: { added: '2 days ago', expires: '5 days' },
+                peppers: { added: 'Yesterday', expires: '7 days' },
+                eggplants: { added: 'Today', expires: '10 days' },
+                cucumbers: { added: '3 days ago', expires: '4 days' }
+            },
+            isVoiceActive: false
+        };
+        // Calculate total items
+        state.totalItems = Object.values(state.inventory).reduce((a,b) => a+b, 0);
+
+        // Three.js Core Variables
+        let scene, camera, renderer, controls;
+        let sunLight, interiorLight;
+        
+        // Dynamic elements
+        let doorGroup, coolingFan, displayTexture, displayCanvas, displayCtx;
+        let raycaster, mouse;
+        
+        // Chart.js instance
+        let tempChart;
+
+        // Initialize App
+        function init() {
+            initThreeJS();
+            buildScene();
+            initChart();
+            setupUI();
+            
+            // Start simulation loop
+            setInterval(updateSimulationData, 1000);
+            animate();
+        }
+
+        function initThreeJS() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0f172a); // Tailwind slate-900
+            scene.fog = new THREE.FogExp2(0x0f172a, 0.012);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(22, 12, 28);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.target.set(0, 8, 0);
+            controls.maxPolarAngle = Math.PI / 2 + 0.1;
+            controls.minDistance = 15;
+            controls.maxDistance = 60;
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('click', onMouseClick);
+        }
+
+        function buildScene() {
+            // Lighting
+            const ambient = new THREE.AmbientLight(0xffffff, 0.3);
+            scene.add(ambient);
+
+            sunLight = new THREE.DirectionalLight(0xfff5e6, 1.5);
+            sunLight.position.set(20, 30, 20);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 100;
+            const shadowD = 15;
+            sunLight.shadow.camera.left = -shadowD; sunLight.shadow.camera.right = shadowD;
+            sunLight.shadow.camera.top = shadowD; sunLight.shadow.camera.bottom = -shadowD;
+            sunLight.shadow.bias = -0.001;
+            scene.add(sunLight);
+
+            // Ground
+            const ground = new THREE.Mesh(
+                new THREE.PlaneGeometry(200, 200),
+                new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.2, metalness: 0.1 })
+            );
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Grid
+            const grid = new THREE.GridHelper(100, 50, 0x1e293b, 0x1e293b);
+            grid.position.y = 0.02;
+            scene.add(grid);
+
+            // --- FRIDGE CONSTRUCTION ---
+            const fridgeGroup = new THREE.Group();
+            scene.add(fridgeGroup);
+
+            // Dimensions
+            const w = 14, h = 18, d = 12, t = 0.6;
+            const sideW = 4; // electronics compartment width
+
+            // Materials
+            const shellMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4 });
+            const darkMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.7, metalness: 0.3 });
+            const innerMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
+            const glassMat = new THREE.MeshPhysicalMaterial({
+                color: 0xffffff, transmission: 0.95, opacity: 1, transparent: true, roughness: 0.05, ior: 1.5, thickness: 0.1
+            });
+
+            // Feet
+            const footGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.8, 16);
+            [[-w/2+1, d/2-1], [w/2-1, d/2-1], [-w/2+1, -d/2+1], [w/2-1, -d/2-1]].forEach(pos => {
+                const foot = new THREE.Mesh(footGeo, darkMat);
+                foot.position.set(pos[0], 0.4, pos[1]);
+                fridgeGroup.add(foot);
+            });
+
+            const body = new THREE.Group();
+            body.position.y = 0.8;
+            fridgeGroup.add(body);
+
+            // Outer Shell Panels
+            const back = new THREE.Mesh(new THREE.BoxGeometry(w, h, t), shellMat);
+            back.position.set(0, h/2, -d/2+t/2); back.castShadow = true; back.receiveShadow = true; body.add(back);
+
+            const right = new THREE.Mesh(new THREE.BoxGeometry(t, h, d-t), shellMat);
+            right.position.set(w/2-t/2, h/2, t/2); right.castShadow = true; right.receiveShadow = true; body.add(right);
+
+            const bottom = new THREE.Mesh(new THREE.BoxGeometry(w, t, d-t), shellMat);
+            bottom.position.set(0, t/2, t/2); bottom.castShadow = true; bottom.receiveShadow = true; body.add(bottom);
+
+            const divider = new THREE.Mesh(new THREE.BoxGeometry(t, h-t, d-t), shellMat);
+            const divX = -w/2 + sideW;
+            divider.position.set(divX, h/2, t/2); divider.castShadow = true; body.add(divider);
+
+            // Transparent Left Wall (Electronics View)
+            const leftGlass = new THREE.Mesh(new THREE.BoxGeometry(0.1, h, d-t), glassMat);
+            leftGlass.position.set(-w/2 + 0.05, h/2, t/2);
+            body.add(leftGlass);
+
+            // Top Box (Display & Solar Base)
+            const topH = 3.5;
+            const topBox = new THREE.Mesh(new THREE.BoxGeometry(w, topH, d), darkMat);
+            topBox.position.set(0, h + topH/2, 0); topBox.castShadow = true; body.add(topBox);
+
+            buildElectronics(body, -w/2 + sideW/2, h/2, 0);
+
+            // Inside Liners
+            const cw = w - sideW - t*2;
+            const innerBack = new THREE.Mesh(new THREE.BoxGeometry(cw, h-t*2, 0.1), innerMat);
+            innerBack.position.set(divX + cw/2 + t/2, h/2, -d/2 + t + 0.05); body.add(innerBack);
+
+            // Interior Light
+            interiorLight = new THREE.PointLight(0xffffff, 0, 15); // off initially, on when door opens
+            interiorLight.position.set(divX + cw/2, h - 1, 0);
+            body.add(interiorLight);
+
+            // Shelves
+            const shelfGeo = new THREE.BoxGeometry(cw - 0.2, 0.15, d - 1);
+            [6, 12].forEach(y => {
+                const shelf = new THREE.Mesh(shelfGeo, glassMat);
+                shelf.position.set(divX + cw/2 + t/2, y, 0);
+                shelf.receiveShadow = true;
+                body.add(shelf);
+            });
+
+            // Procedural Vegetables
+            buildVegetables(body, divX + cw/2 + t/2);
+
+            // Door Group
+            doorGroup = new THREE.Group();
+            doorGroup.position.set(w/2 - t/2, h/2, d/2); // Hinge on right
+            
+            const doorW = cw + t*1.5;
+            const doorOuter = new THREE.Mesh(new THREE.BoxGeometry(doorW, h, t), shellMat);
+            doorOuter.position.set(-doorW/2, 0, t/2);
+            doorOuter.castShadow = true;
+            doorOuter.userData.isDoor = true; // For raycasting
+            doorGroup.add(doorOuter);
+            
+            const doorInner = new THREE.Mesh(new THREE.BoxGeometry(doorW - 0.8, h - 0.8, 0.3), innerMat);
+            doorInner.position.set(-doorW/2, 0, -0.15);
+            doorInner.userData.isDoor = true;
+            doorGroup.add(doorInner);
+
+            // Handle
+            const handle = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.12, 0.12, 4, 12),
+                new THREE.MeshStandardMaterial({ color: 0x111, metalness: 0.8, roughness: 0.2 })
+            );
+            handle.position.set(-doorW + 0.8, 0, t + 0.2);
+            handle.userData.isDoor = true;
+            doorGroup.add(handle);
+
+            body.add(doorGroup);
+
+            // Solar Panel (Top)
+            const solarGroup = new THREE.Group();
+            solarGroup.position.set(0, h + topH + 0.1, 0);
+            solarGroup.rotation.x = 0.1;
+            
+            const pFrame = new THREE.Mesh(new THREE.BoxGeometry(w+0.5, 0.3, d+0.5), new THREE.MeshStandardMaterial({color: 0x888, metalness: 0.8}));
+            pFrame.castShadow = true; solarGroup.add(pFrame);
+
+            // Procedural Solar Texture
+            const scvs = document.createElement('canvas'); scvs.width=512; scvs.height=512;
+            const sctx = scvs.getContext('2d');
+            sctx.fillStyle = '#0f172a'; sctx.fillRect(0,0,512,512);
+            sctx.strokeStyle = '#334155'; sctx.lineWidth = 4;
+            for(let i=0; i<=512; i+=64) {
+                sctx.beginPath(); sctx.moveTo(i,0); sctx.lineTo(i,512); sctx.stroke();
+                sctx.beginPath(); sctx.moveTo(0,i); sctx.lineTo(512,i); sctx.stroke();
+            }
+            const solarTex = new THREE.CanvasTexture(scvs);
+            solarTex.wrapS = THREE.RepeatWrapping; solarTex.wrapT = THREE.RepeatWrapping; solarTex.repeat.set(2,2);
+            
+            const cells = new THREE.Mesh(new THREE.PlaneGeometry(w+0.2, d+0.2), new THREE.MeshStandardMaterial({map: solarTex, color: 0x1d4ed8, metalness: 0.5}));
+            cells.rotation.x = -Math.PI/2; cells.position.y = 0.16;
+            solarGroup.add(cells);
+            body.add(solarGroup);
+
+            displayCanvas = document.createElement('canvas');
+            displayCanvas.width = 1024; displayCanvas.height = 256;
+            displayCtx = displayCanvas.getContext('2d');
+            displayTexture = new THREE.CanvasTexture(displayCanvas);
+            
+            const screen = new THREE.Mesh(
+                new THREE.PlaneGeometry(10, 2.5),
+                new THREE.MeshBasicMaterial({ map: displayTexture })
+            );
+            screen.position.set(0, h + topH/2, d/2 + 0.02);
+            body.add(screen);
+            
+            renderDisplay();
+        }
+
+        // Helper to build internal electronics
+        function buildElectronics(parent, cx, cy, cz) {
+            const grp = new THREE.Group();
+            grp.position.set(cx, cy, cz);
+
+            // Battery (Bottom - Adjusted to fit compressor)
+            const batt = new THREE.Mesh(
+                new THREE.BoxGeometry(2.8, 3.5, 3.5),
+                new THREE.MeshStandardMaterial({color: 0x111, roughness: 0.8})
+            );
+            batt.position.set(0, -6, 2.5);
+            
+            // Battery Label (Yellow accent)
+            const label = new THREE.Mesh(
+                new THREE.PlaneGeometry(2.6, 1.8),
+                new THREE.MeshBasicMaterial({color: 0xfacc15})
+            );
+            label.position.set(-1.41, -6, 2.5); label.rotation.y = -Math.PI/2;
+            grp.add(batt); grp.add(label);
+
+            // Compressor (Bottom - next to battery)
+            const compGrp = new THREE.Group();
+            compGrp.position.set(0, -6.5, -1.5);
+            const compBody = new THREE.Mesh(
+                new THREE.CylinderGeometry(1.4, 1.4, 2.8, 16),
+                new THREE.MeshStandardMaterial({color: 0x050505, roughness: 0.5, metalness: 0.8})
+            );
+            const compTop = new THREE.Mesh(
+                new THREE.SphereGeometry(1.4, 16, 16, 0, Math.PI*2, 0, Math.PI/2),
+                new THREE.MeshStandardMaterial({color: 0x050505, roughness: 0.5, metalness: 0.8})
+            );
+            compTop.position.y = 1.4;
+            compGrp.add(compBody); compGrp.add(compTop);
+            grp.add(compGrp);
+
+            // MPPT Charge Controller (Middle)
+            const mppt = new THREE.Mesh(
+                new THREE.BoxGeometry(1.5, 2.2, 2.5),
+                new THREE.MeshStandardMaterial({color: 0x0284c7, roughness: 0.4}) // Sky blue
+            );
+            mppt.position.set(-0.2, -1.5, 2.5);
+            
+            // MPPT screen
+            const mpptScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.8), new THREE.MeshBasicMaterial({color: 0x111}));
+            mpptScreen.position.set(-0.96, -1.2, 2.5); mpptScreen.rotation.y = -Math.PI/2;
+            grp.add(mppt); grp.add(mpptScreen);
+
+            // Wiring (Power cables connecting MPPT to Battery)
+            const redWireCurve = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(-0.5, -2.5, 2.8),
+                new THREE.Vector3(-1.0, -4.0, 3.5),
+                new THREE.Vector3(-0.5, -4.5, 3.0)
+            ]);
+            const blkWireCurve = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(-0.5, -2.5, 2.2),
+                new THREE.Vector3(-1.2, -4.0, 2.0),
+                new THREE.Vector3(-0.5, -4.5, 2.0)
+            ]);
+            const redWire = new THREE.Mesh(new THREE.TubeGeometry(redWireCurve, 8, 0.08, 6, false), new THREE.MeshStandardMaterial({color: 0xef4444}));
+            const blkWire = new THREE.Mesh(new THREE.TubeGeometry(blkWireCurve, 8, 0.08, 6, false), new THREE.MeshStandardMaterial({color: 0x111111}));
+            grp.add(redWire); grp.add(blkWire);
+
+            // PCB Board (Top)
+            const pcb = new THREE.Mesh(
+                new THREE.BoxGeometry(0.1, 4.5, 6),
+                new THREE.MeshStandardMaterial({color: 0x065f46, roughness: 0.5}) // Dark green
+            );
+            pcb.position.set(0, 3.5, -0.5);
+            
+            // Components on PCB
+            const chipMat = new THREE.MeshStandardMaterial({color: 0x111});
+            const comp1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1, 1), chipMat);
+            comp1.position.set(-0.1, 1.5, 1); pcb.add(comp1);
+            
+            const relayMat = new THREE.MeshStandardMaterial({color: 0x2563eb}); // Blue relay
+            for(let i=0; i<3; i++) {
+                const r = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.6, 0.8), relayMat);
+                r.position.set(-0.1, -1 + i*0.9, -2);
+                pcb.add(r);
+            }
+            grp.add(pcb);
+
+            // Cooling Fan Group (Positioned above compressor)
+            const fanGrp = new THREE.Group();
+            fanGrp.position.set(0, -1, -2.5);
+            
+            const caseMesh = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 1), new THREE.MeshStandardMaterial({color: 0x222}));
+            fanGrp.add(caseMesh);
+            
+            coolingFan = new THREE.Group();
+            const bladeGeo = new THREE.BoxGeometry(2.2, 0.3, 0.05);
+            const bladeMat = new THREE.MeshStandardMaterial({color: 0x444});
+            for(let i=0; i<5; i++) {
+                const b = new THREE.Mesh(bladeGeo, bladeMat);
+                b.rotation.z = (Math.PI*2/5) * i;
+                coolingFan.add(b);
+            }
+            coolingFan.position.x = -1.3; // sticking out slightly
+            coolingFan.rotation.y = Math.PI/2;
+            fanGrp.add(coolingFan);
+            
+            grp.add(fanGrp);
+            parent.add(grp);
+        }
+
+        // Helper to build vegetables
+        function buildVegetables(parent, cx) {
+            const vegGrp = new THREE.Group();
+            
+            // Tomatoes (Bottom Shelf - Left)
+            const tomMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3 });
+            const tomGeo = new THREE.SphereGeometry(0.6, 16, 16);
+            for(let i=0; i<state.inventory.tomatoes; i++) {
+                const t = new THREE.Mesh(tomGeo, tomMat);
+                t.position.set(cx - 2.5 + (i%3)*1.2, 6 + 0.6, (i<3 ? 1.5 : 0.2));
+                t.castShadow = true;
+                vegGrp.add(t);
+            }
+
+            // Eggplants (Bottom Shelf - Right)
+            const eggMat = new THREE.MeshStandardMaterial({ color: 0x581c87, roughness: 0.2 }); // Deep purple
+            const eggGeo = new THREE.SphereGeometry(0.6, 16, 16);
+            for(let i=0; i<state.inventory.eggplants; i++) {
+                const e = new THREE.Mesh(eggGeo, eggMat);
+                e.scale.set(1, 1.6, 1);
+                e.rotation.z = Math.PI / 8; // Slight tilt
+                e.position.set(cx + 1.5 + i*1.3, 6 + 0.9, 0.8);
+                e.castShadow = true;
+                vegGrp.add(e);
+                // Eggplant stem
+                const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.15, 0.4), new THREE.MeshStandardMaterial({color: 0x166534}));
+                stem.position.y = 0.9;
+                e.add(stem);
+            }
+
+            // Capsicums / Bell Peppers (Top Shelf - Left)
+            const pepMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.4 });
+            const pepGeo = new THREE.CylinderGeometry(0.6, 0.4, 1.2, 12, 1, false, 0, Math.PI*2);
+            for(let i=0; i<state.inventory.peppers; i++) {
+                const p = new THREE.Mesh(pepGeo, pepMat);
+                p.position.set(cx - 2.2 + i*1.3, 12 + 0.6, 1.0 + (i%2)*-1.2);
+                
+                // Add stem
+                const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.4), new THREE.MeshStandardMaterial({color: 0x166534}));
+                stem.position.y = 0.7;
+                p.add(stem);
+                
+                p.castShadow = true;
+                vegGrp.add(p);
+            }
+
+            // Cucumbers (Top Shelf - Right)
+            const cucMat = new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.5 });
+            const cucGeo = new THREE.CylinderGeometry(0.3, 0.3, 2.2, 12);
+            for(let i=0; i<state.inventory.cucumbers; i++) {
+                const c = new THREE.Mesh(cucGeo, cucMat);
+                c.rotation.x = Math.PI/2;
+                c.rotation.z = Math.PI/4 + (i*0.1); // Stacked slightly
+                c.position.set(cx + 1.5, 12 + 0.3 + (i*0.4), 1.0 - (i*0.5));
+                c.castShadow = true;
+                vegGrp.add(c);
+            }
+
+            parent.add(vegGrp);
+        }
+
+        function onMouseClick(event) {
+            // Raycast for Door clicking
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(scene.children, true);
+            
+            for(let i=0; i<intersects.length; i++) {
+                if(intersects[i].object.userData.isDoor) {
+                    toggleDoor();
+                    break;
+                }
+            }
+        }
+
+        function toggleDoor() {
+            state.doorOpen = !state.doorOpen;
+            // Fridge light turns on when open
+            interiorLight.intensity = state.doorOpen ? 0.8 : 0;
+        }
+
+        function renderDisplay() {
+            const ctx = displayCtx;
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0, 0, 1024, 256);
+            
+            ctx.strokeStyle = '#38bdf8'; // border cyan
+            ctx.lineWidth = 4;
+            ctx.strokeRect(4, 4, 1016, 248);
+
+            // Text
+            ctx.textBaseline = 'top';
+            
+            // Brand
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 50px Inter'; ctx.fillText('AgriCool', 40, 40);
+            ctx.fillStyle = '#10b981'; ctx.font = '24px Inter'; ctx.fillText('SMART MINI FRIDGE', 40, 100);
+
+            // Divider
+            ctx.fillStyle = '#333'; ctx.fillRect(320, 20, 4, 216);
+
+            // Temp
+            ctx.fillStyle = '#38bdf8'; ctx.font = '30px Orbitron'; ctx.fillText('TEMP', 360, 40);
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 70px Orbitron'; ctx.fillText(`${state.temp.toFixed(1)}°C`, 360, 80);
+
+            // Humidity
+            ctx.fillStyle = '#818cf8'; ctx.font = '30px Orbitron'; ctx.fillText('HUM', 620, 40);
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 70px Orbitron'; ctx.fillText(`${Math.round(state.humidity)}%`, 620, 80);
+
+            // Solar Power
+            ctx.fillStyle = '#facc15'; ctx.font = '26px Inter'; 
+            ctx.fillText(`⚡ PWR: ${Math.round(state.solarW)}W | BATT: ${Math.round(state.battery)}%`, 360, 190);
+
+            // Inventory Count on LED
+            ctx.fillStyle = '#10b981'; ctx.font = 'bold 22px Inter';
+            ctx.fillText(`📦 ITEMS IN STOCK: ${state.totalItems}`, 40, 185);
+
+            // Mic Icon
+            ctx.beginPath(); ctx.arc(920, 128, 45, 0, Math.PI*2); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 4; ctx.stroke();
+            ctx.fillStyle = '#3b82f6'; ctx.font = '40px Inter'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🎤', 920, 128);
+            ctx.textAlign = 'left';
+
+            if(displayTexture) displayTexture.needsUpdate = true;
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('tempChart').getContext('2d');
+            
+            // Gradient fill
+            const gradient = ctx.createLinearGradient(0, 0, 0, 150);
+            gradient.addColorStop(0, 'rgba(16, 185, 129, 0.4)'); // emerald
+            gradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+
+            tempChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: Array(20).fill(''),
+                    datasets: [{
+                        label: 'Internal Temp (°C)',
+                        data: Array(20).fill(20),
+                        borderColor: '#34d399', // emerald 400
+                        backgroundColor: gradient,
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { display: false },
+                        y: { 
+                            display: true, 
+                            min: 0, 
+                            max: 25,
+                            grid: { color: 'rgba(255,255,255,0.1)' },
+                            ticks: { color: '#94a3b8', stepSize: 5, font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        function setupUI() {
+            // Populate Inventory Dashboard
+            const invList = document.getElementById('inventory-list');
+            const icons = { tomatoes: 'fa-apple-whole text-red-500', peppers: 'fa-pepper-hot text-green-500', eggplants: 'fa-egg text-purple-500', cucumbers: 'fa-carrot text-emerald-600' };
+            const names = { tomatoes: 'Fresh Tomatoes', peppers: 'Bell Peppers', eggplants: 'Purple Eggplants', cucumbers: 'Crisp Cucumbers' };
+            
+            let html = '';
+            for(const [key, count] of Object.entries(state.inventory)) {
+                html += `
+                    <div class="flex flex-col bg-black/20 px-3 py-2 rounded-lg border border-white/5">
+                        <div class="flex justify-between items-center mb-1">
+                            <div class="flex items-center gap-3">
+                                <div class="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center shadow-inner">
+                                    <i class="fa-solid ${icons[key]} text-lg"></i>
+                                </div>
+                                <span class="font-medium text-gray-300 text-sm tracking-wide">${names[key]}</span>
+                            </div>
+                            <span class="font-mono text-lg font-bold text-gray-200">${count}</span>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-gray-400 mt-1 pt-1 border-t border-white/10">
+                            <span>Added: ${state.inventoryDates[key].added}</span>
+                            <span class="${parseInt(state.inventoryDates[key].expires) <= 5 ? 'text-amber-400 font-bold' : ''}">Exp: ~${state.inventoryDates[key].expires}</span>
+                        </div>
+                    </div>
+                `;
+            }
+            invList.innerHTML = html;
+            document.getElementById('inv-total').innerText = state.totalItems;
+
+            // Slider
+            const sunSlider = document.getElementById('sun-slider');
+            const sunVal = document.getElementById('sun-val');
+            sunSlider.addEventListener('input', (e) => {
+                state.sunlight = parseInt(e.target.value);
+                sunVal.innerText = `${state.sunlight}%`;
+            });
+
+            // Door Button
+            document.getElementById('btn-door').addEventListener('click', toggleDoor);
+
+            // Voice Button Logic
+            const btnVoice = document.getElementById('btn-voice');
+            const toast = document.getElementById('voice-toast');
+            const analysisPanel = document.getElementById('ai-analysis-panel');
+            const voiceIcon = document.getElementById('voice-icon');
+            const voiceText = document.getElementById('voice-text');
+            
+            let audioContext = null;
+
+            btnVoice.addEventListener('click', async () => {
+                if (state.isVoiceActive) return; // Prevent multiple clicks
+                state.isVoiceActive = true;
+                
+                toast.style.opacity = 1;
+                toast.innerText = 'Analyzing inventory...';
+                voiceIcon.classList.add('text-red-400');
+                voiceIcon.classList.remove('fa-microphone');
+                voiceIcon.classList.add('fa-circle-notch', 'fa-spin');
+                voiceText.innerText = 'AI Thinking...';
+                analysisPanel.classList.add('hidden');
+
+                // Generate AI Analysis Text
+                let analysisText = `Based on current temperature of ${state.temp.toFixed(1)} degrees Celsius:\n`;
+                if (state.temp > 8) {
+                    analysisText += `Warning: Temperature is high. Spoilage risk increased.\n`;
+                }
+                analysisText += `Tomatoes (added ${state.inventoryDates.tomatoes.added}) will likely spoil in ${state.inventoryDates.tomatoes.expires}.\n`;
+                analysisText += `Cucumbers (added ${state.inventoryDates.cucumbers.added}) need attention soon, estimated ${state.inventoryDates.cucumbers.expires} remaining.`;
+
+                // Update UI with text analysis
+                analysisPanel.innerHTML = analysisText.replace(/\n/g, '<br/>');
+                
+                try {
+                    toast.innerText = 'Generating voice...';
+                    
+                    // Call Gemini TTS API
+                    const payload = {
+                        contents: [{
+                            parts: [{ text: analysisText }]
+                        }],
+                        generationConfig: {
+                            responseModalities: ["AUDIO"],
+                            speechConfig: {
+                                voiceConfig: {
+                                    prebuiltVoiceConfig: { voiceName: "Puck" } // Upbeat voice
+                                }
+                            }
+                        },
+                        model: "gemini-2.5-flash-preview-tts"
+                    };
+                    const apiKey = ""; // Keep empty as instructed
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+                    
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    const result = await response.json();
+                    const part = result?.candidates?.[0]?.content?.parts?.[0];
+                    const audioDataBase64 = part?.inlineData?.data;
+                    const mimeType = part?.inlineData?.mimeType;
+
+                    if (audioDataBase64 && mimeType && mimeType.startsWith("audio/")) {
+                        toast.innerText = 'Speaking...';
+                        analysisPanel.classList.remove('hidden');
+                        voiceIcon.classList.remove('fa-circle-notch', 'fa-spin');
+                        voiceIcon.classList.add('fa-volume-high', 'animate-pulse');
+                        voiceText.innerText = 'AI Speaking';
+
+                        // Decode and Play Audio
+                        if (!audioContext) {
+                             audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        }
+                        
+                        const sampleRateMatch = mimeType.match(/rate=(\d+)/);
+                        const sampleRate = sampleRateMatch ? parseInt(sampleRateMatch[1], 10) : 24000;
+                        
+                        const binaryString = atob(audioDataBase64);
+                        const len = binaryString.length;
+                        const bytes = new Uint8Array(len);
+                        for (let i = 0; i < len; i++) {
+                            bytes[i] = binaryString.charCodeAt(i);
+                        }
+                        
+                        const dataInt16 = new Int16Array(bytes.buffer);
+                        const frameCount = dataInt16.length;
+                        const audioBuffer = audioContext.createBuffer(1, frameCount, sampleRate);
+                        const channelData = audioBuffer.getChannelData(0);
+                        
+                        for (let i = 0; i < frameCount; i++) {
+                            channelData[i] = dataInt16[i] / 32768.0; // Convert Int16 to Float32
+                        }
+
+                        const source = audioContext.createBufferSource();
+                        source.buffer = audioBuffer;
+                        source.connect(audioContext.destination);
+                        
+                        source.onended = () => {
+                            resetVoiceUI();
+                        };
+                        
+                        source.start(0);
+
+                    } else {
+                        throw new Error("Invalid audio data received.");
+                    }
+                } catch (error) {
+                    console.error("TTS Error:", error);
+                    toast.innerText = 'Voice generation failed.';
+                    toast.classList.add('text-red-400');
+                    setTimeout(resetVoiceUI, 3000);
+                }
+                
+                function resetVoiceUI() {
+                    state.isVoiceActive = false;
+                    toast.style.opacity = 0;
+                    voiceIcon.className = 'fa-solid fa-microphone';
+                    voiceText.innerText = 'Voice AI Analysis';
+                    toast.classList.remove('text-red-400');
+                    setTimeout(() => { toast.innerText = 'Ready for commands.'; }, 500);
+                }
+            });
+        }
+
+        function updateSimulationData() {
+            // Solar Math
+            const maxW = 200;
+            const targetW = (state.sunlight / 100) * maxW;
+            state.solarW += (targetW - state.solarW) * 0.1;
+
+            // Temp Math (Approaching target if door closed)
+            if (state.doorOpen) {
+                // Heats up quickly if door is open
+                state.temp += (22 - state.temp) * 0.05; 
+            } else {
+                // Cools down towards target
+                state.temp += (state.targetTemp - state.temp) * 0.02;
+            }
+
+            // Battery Math
+            const draw = (state.temp > state.targetTemp + 0.5) ? 0.5 : 0.1; // active cooling draws more
+            const charge = (state.solarW / maxW) * 0.8;
+            state.battery = Math.min(100, Math.max(0, state.battery + charge - draw));
+
+            // Update Chart
+            const dataArr = tempChart.data.datasets[0].data;
+            dataArr.shift();
+            dataArr.push(state.temp);
+            tempChart.update();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        let frameCount = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            // Lighting based on slider
+            const sunNorm = state.sunlight / 100;
+            sunLight.intensity = 0.2 + (sunNorm * 2.0);
+            scene.background.setHSL(0.6, 0.5, 0.02 + (sunNorm * 0.05));
+            scene.fog.color.copy(scene.background);
+
+            // Door Animation (Lerp)
+            const targetRot = state.doorOpen ? -Math.PI / 1.8 : 0;
+            if (doorGroup) {
+                doorGroup.rotation.y += (targetRot - doorGroup.rotation.y) * 0.1;
+            }
+
+            // Fan Animation (Spins faster if cooling actively)
+            if (coolingFan) {
+                const speed = (state.temp > state.targetTemp + 0.5) ? 0.4 : 0.02;
+                coolingFan.rotation.x += speed; // rotated on x axis relative to fan Grp
+            }
+
+            // Update LED texture every 5 frames to save performance
+            if (frameCount++ % 5 === 0) {
+                renderDisplay();
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
